@@ -6,6 +6,7 @@ import json
 import time
 from optparse import OptionParser
 
+
 def parsing_args()->argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tool to merge two logs of json")
     
@@ -36,7 +37,6 @@ def main():
     logger.add(sys.stderr, format="{time} {level} {message}", filter="my_module", level="INFO")
     args_cmd = parsing_args()
     logger.info(f"Start with args:{args_cmd}")
-    
 
 
 if __name__ == "__main__":
