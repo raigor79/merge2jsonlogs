@@ -67,6 +67,52 @@ def load_line(log_file_path):
             yield line
 
 
+@logger.catch()
+def merge_log(args_cmd):
+    """Function merge two files log in one outfile
+    """ 
+    gen_log_a = load_line(args_cmd.path_to_log1)
+    gen_log_b = load_line(args_cmd.path_to_log2)
+    line_a, line_b = None, None
+    stop_a, stop_b = False, False
+    with open(args_cmd.out_log, 'w') as merge_file_log:
+        while True:
+
+            if not line_a and not stop_a:
+                try:
+                    line_a = gen_log_a.__next__()
+                    time_line_a = convert_str_to_time(
+                        convert_from_json(line_a)['timestamp']
+                        )
+                except StopIteration:
+                    stop_a = True
+                    line_a = None
+                    
+            if not line_b and not stop_b:
+                try:
+                    line_b = gen_log_b.__next__()
+                    time_line_b = convert_str_to_time(
+                        convert_from_json(line_b)['timestamp']
+                        )
+                except StopIteration:
+                    stop_b = True
+                    line_b = None
+                    
+            if stop_a and stop_b:
+                break
+ 
+            if not line_b or line_a:
+                   line_a, line_b = line_b, line_a
+            
+            if  time_line_a > time_line_b:
+                string_line = line_b
+                line_b = None
+            else:
+                string_line = line_a
+                line_a = None
+            merge_file_log.write(string_line)
+
+
 def main():
     logger.add(
         sys.stderr, 
@@ -78,10 +124,7 @@ def main():
     logger.info(f"Start with args:{args_cmd}")
     path_out_log, name_log_file = os.path.split(args_cmd.out_log)
     make_dir(path_out_log)
-    gen_log_a = load_line(args_cmd.path_to_log1)
-    gen_log_b = load_line(args_cmd.path_to_log2)
-    for i in gen_log_a:
-        pass
+    merge_log(args_cmd)
 
 
 if __name__ == "__main__":
