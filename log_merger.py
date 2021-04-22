@@ -1,4 +1,6 @@
+import datetime
 import os
+from typing import Iterable, Union, Generator
 from tqdm import tqdm
 from loguru import logger
 import sys
@@ -35,7 +37,7 @@ def parsing_args()->argparse.Namespace:
     return parser.parse_args()
 
 
-def make_dir(path):
+def make_dir(path: str) -> None:
     """ Directories creation function
     arguments:
     path - full path make directory
@@ -47,80 +49,95 @@ def make_dir(path):
             logger.error(f"Create directories {path} failed")
 
 
-def convert_from_json(string):
-    return json.loads(string)
-
-
-def convert_str_to_time(string, format=TIMESTAMP_FORMAT):
+def convert_str_to_time(string: str, format=TIMESTAMP_FORMAT) -> time.struct_time:
     return time.strptime(string, format)
 
 
-def load_line(log_file_path):
+def load_line(log_file_path: str) -> Generator:
     """Load data from the file log on the specified path
     arguments:
     log_file_path - full path to the file log 
     """
     with open(log_file_path, 'rt', encoding='utf-8') as log_file:
-        for line in tqdm(log_file):
+        for line in log_file:
             yield line
 
 
+def read_value_from_generator(generator: Generator, fieldstr: str):
+    try:
+        line = next(generator)
+        time_line = convert_str_to_time(json.loads(line)[fieldstr])
+    except StopIteration:        
+        return None, True, None
+    return line, False, time_line
+
+
+def generator_merge_logs(generator_one: Generator, generator_two: Generator) -> Generator:
+    """ Merge generator """
+    line_a, stop_a, time_line_a = read_value_from_generator(
+        generator_one, 
+        'timestamp'
+        )
+    line_b, stop_b, time_line_b = read_value_from_generator(
+        generator_two, 
+        'timestamp'
+        )   
+    while not stop_a or not stop_b:
+
+        if not stop_a and not stop_b:
+            if time_line_a >= time_line_b:
+                line_min_time = 'bb' + line_b
+                line_b, stop_b, time_line_b = read_value_from_generator(
+                    generator_two,
+                    'timestamp'
+                    )
+                
+            elif time_line_a < time_line_b:
+                line_min_time = 'aa' + line_a
+                line_a, stop_a, time_line_a = read_value_from_generator(
+                    generator_one, 
+                    'timestamp'
+                    )
+
+        elif stop_a:
+            line_min_time = 'b' + line_b
+            line_b, stop_b, time_line_b = read_value_from_generator(
+            generator_two,
+            'timestamp'
+            )
+
+        elif stop_b:
+            line_min_time = 'a' + line_a     
+            line_a, stop_a, time_line_a = read_value_from_generator(
+            generator_one, 
+            'timestamp'
+            )
+
+        yield line_min_time
+
+
 @logger.catch()
-def merge_log(args_cmd):
+def merge_log(args_cmd) -> None:
     """Function merge two files log in one outfile
     """ 
     gen_log_a = load_line(args_cmd.path_to_log1)
     gen_log_b = load_line(args_cmd.path_to_log2)
-    line_a, line_b = None, None
-    stop_a, stop_b = False, False
     path_, name_log_file = os.path.split(args_cmd.out_log)
     temp_path_out = os.path.join(path_, "." + name_log_file)
     with open(temp_path_out, 'w') as merge_file_log:
-        while True:
-
-            if not line_a and not stop_a:
-                try:
-                    line_a = gen_log_a.__next__()
-                    time_line_a = convert_str_to_time(
-                        convert_from_json(line_a)['timestamp']
-                        )
-                except StopIteration:
-                    stop_a = True
-                    line_a = None
-                    
-            if not line_b and not stop_b:
-                try:
-                    line_b = gen_log_b.__next__()
-                    time_line_b = convert_str_to_time(
-                        convert_from_json(line_b)['timestamp']
-                        )
-                except StopIteration:
-                    stop_b = True
-                    line_b = None
-                    
-            if stop_a and stop_b:
-                break
- 
-            if not line_b or line_a:
-                   line_a, line_b = line_b, line_a
-            
-            if  time_line_a > time_line_b:
-                string_line = line_b
-                line_b = None
-            else:
-                string_line = line_a
-                line_a = None
+        for string_line in generator_merge_logs(gen_log_a, gen_log_b):
             merge_file_log.write(string_line)
     os.rename(temp_path_out, args_cmd.out_log)
 
 
-def main():
+def main() -> None:
     logger.add(
         sys.stderr, 
         format="{time} {level} {message}", 
         filter="my_module", 
         level="INFO"
     )
+
     args_cmd = parsing_args()
     logger.info(f"Start with args:{args_cmd}")
     path_out_log, _ = os.path.split(args_cmd.out_log)
