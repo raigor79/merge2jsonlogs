@@ -9,6 +9,7 @@ import json
 import time
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+LENGTH_CHUNK = 255
 
 
 def parsing_args()->argparse.Namespace:
@@ -86,28 +87,28 @@ def generator_merge_logs(generator_one: Generator, generator_two: Generator) -> 
 
         if not stop_a and not stop_b:
             if time_line_a >= time_line_b:
-                line_min_time = 'bb' + line_b
+                line_min_time = line_b
                 line_b, stop_b, time_line_b = read_value_from_generator(
                     generator_two,
                     'timestamp'
                     )
                 
             elif time_line_a < time_line_b:
-                line_min_time = 'aa' + line_a
+                line_min_time = line_a
                 line_a, stop_a, time_line_a = read_value_from_generator(
                     generator_one, 
                     'timestamp'
                     )
 
         elif stop_a:
-            line_min_time = 'b' + line_b
+            line_min_time = line_b
             line_b, stop_b, time_line_b = read_value_from_generator(
             generator_two,
             'timestamp'
             )
 
         elif stop_b:
-            line_min_time = 'a' + line_a     
+            line_min_time = line_a     
             line_a, stop_a, time_line_a = read_value_from_generator(
             generator_one, 
             'timestamp'
@@ -125,20 +126,29 @@ def merge_log(args_cmd) -> None:
     path_, name_log_file = os.path.split(args_cmd.out_log)
     temp_path_out = os.path.join(path_, "." + name_log_file)
     with open(temp_path_out, 'w') as merge_file_log:
+        chunck = []
         for string_line in generator_merge_logs(gen_log_a, gen_log_b):
-            merge_file_log.write(string_line)
+            if len(chunck) < LENGTH_CHUNK:
+                chunck.append(string_line)
+            else:
+                merge_file_log.writelines(chunck)
+                chunck = []
+        else:
+            if chunck:
+                merge_file_log.writelines(chunck)
     os.rename(temp_path_out, args_cmd.out_log)
 
 
 def main() -> None:
+    args_cmd = parsing_args()
+
     logger.add(
         sys.stderr, 
         format="{time} {level} {message}", 
         filter="my_module", 
         level="INFO"
     )
-
-    args_cmd = parsing_args()
+    
     logger.info(f"Start with args:{args_cmd}")
     path_out_log, _ = os.path.split(args_cmd.out_log)
     make_dir(path_out_log)
@@ -151,3 +161,6 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         logger.error(f'Error {error}')
+        raise error
+    except KeyboardInterrupt:
+        pass
